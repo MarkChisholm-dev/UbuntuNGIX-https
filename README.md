@@ -19,7 +19,7 @@ This Bash script automates the entire process of:
 - Setting up **auto-renewal** and **permissions**
 - Testing and reloading Nginx — so you don’t have to
 
-> Perfect for VPS environments where you need to deploy and secure multiple sites fast.
+> Perfect for VPS and cloud environments where you need to deploy and secure multiple sites fast.
 
 ---
 
