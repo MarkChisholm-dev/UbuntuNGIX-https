@@ -26,7 +26,6 @@ This Bash script automates the entire process of:
 ## 🧠 Author
 
 **Mark Chisholm**  
-> “Automation is elegance — repetition is a bug.”
 
 ---
 
