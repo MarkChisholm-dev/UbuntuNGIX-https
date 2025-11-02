@@ -3,7 +3,9 @@
 ![Bash](https://img.shields.io/badge/Bash-4.0+-121011?style=flat-square&logo=gnu-bash&logoColor=white)
 ![Nginx](https://img.shields.io/badge/Nginx-Auto_Config-green?style=flat-square&logo=nginx)
 ![Certbot](https://img.shields.io/badge/SSL-Let%27s_Encrypt-blue?style=flat-square&logo=letsencrypt)
-**Fully automated Nginx + HTTPS provisioning for multiple domains — in one command.**  
+
+# **Fully automated Nginx + HTTPS provisioning for multiple domains — in one command.**  
+
 Designed for simplicity, clarity, and repeatable server setups.
 
 ---
