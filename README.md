@@ -47,5 +47,5 @@ This Bash script automates the entire process of:
 git clone https://github.com/<your-username>/nginx-multi-domain-setup.git
 cd nginx-multi-domain-setup
 chmod +x setup.sh
-sudo ./setup.sh
+sudo ./setup_ssl.sh
 ```
