@@ -44,8 +44,8 @@ This Bash script automates the entire process of:
 ## 🧩 Example Usage
 
 ```bash
-git clone https://github.com/<your-username>/nginx-multi-domain-setup.git
-cd nginx-multi-domain-setup
-chmod +x setup.sh
+git clone https://github.com/<your-username>/UbuntuNGIX-https.git
+cd UbuntuNGIX-https
+chmod +x setup_ssl.sh
 sudo ./setup_ssl.sh
 ```
