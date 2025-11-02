@@ -1,54 +1,94 @@
 #!/bin/bash
 
-# Exit on error
-set -e
+#─────────────────────────────────────────────
+# Multi-domain Nginx + Certbot Auto Setup
+#─────────────────────────────────────────────
+# Author: Mark Chisholm
+# Description: Automatically sets up Nginx and HTTPS for multiple domains
+#─────────────────────────────────────────────
 
-# Function to check if a command is available
-command_exists() {
-    command -v "$1" &> /dev/null
-}
+set -e  # Exit on error
 
-# Function to check if a directory exists
-dir_exists() {
-    [ -d "$1" ]
-}
+#─────────────────────────────────────────────
+# Color Setup
+#─────────────────────────────────────────────
+GREEN="\e[32m"
+YELLOW="\e[33m"
+RED="\e[31m"
+CYAN="\e[36m"
+RESET="\e[0m"
 
-# Function to check if a file exists
-file_exists() {
-    [ -f "$1" ]
-}
+info()    { echo -e "${CYAN}➜${RESET} $1"; }
+success() { echo -e "${GREEN}✔${RESET} $1"; }
+warn()    { echo -e "${YELLOW}⚠${RESET} $1"; }
+error()   { echo -e "${RED}✖${RESET} $1" >&2; }
 
-# Prompt for the domain name
-read -p "Enter your domain name (e.g., example.com): " DOMAIN_NAME
-DOCUMENT_ROOT="/var/www/html"
+#─────────────────────────────────────────────
+# Helper Functions
+#─────────────────────────────────────────────
+command_exists() { command -v "$1" &> /dev/null; }
+dir_exists()     { [ -d "$1" ]; }
+file_exists()    { [ -f "$1" ]; }
 
-# Update package list
-echo "Updating package list..."
-sudo apt update
+#─────────────────────────────────────────────
+# User Input
+#─────────────────────────────────────────────
+echo "──────────────────────────────────────────────"
+echo -e "${CYAN} Nginx + SSL Setup Script ${RESET}"
+echo "──────────────────────────────────────────────"
+read -p "Enter domain names separated by spaces (e.g., example.com site.org): " DOMAINS
 
-# Check if Nginx is installed
+DOCUMENT_ROOT_BASE="/var/www/html"
+
+#─────────────────────────────────────────────
+# System Setup
+#─────────────────────────────────────────────
+info "Updating package list..."
+sudo apt update -y
+
 if command_exists nginx; then
-    echo "Nginx is already installed."
+    success "Nginx already installed."
 else
-    echo "Installing Nginx..."
+    info "Installing Nginx..."
     sudo apt install -y nginx
+    success "Nginx installed."
 fi
 
-# Check if Certbot is installed
 if command_exists certbot; then
-    echo "Certbot is already installed."
+    success "Certbot already installed."
 else
-    echo "Installing Certbot and Nginx plugin..."
+    info "Installing Certbot and Nginx plugin..."
     sudo apt install -y certbot python3-certbot-nginx
+    success "Certbot installed."
 fi
 
-# Allow Nginx through the firewall
-echo "Configuring firewall..."
+info "Configuring firewall..."
 sudo ufw allow 'Nginx Full'
 
-# Set up Nginx configuration
-echo "Setting up Nginx configuration for $DOMAIN_NAME..."
-sudo tee /etc/nginx/sites-available/default > /dev/null <<EOL
+#─────────────────────────────────────────────
+# Domain Setup Loop
+#─────────────────────────────────────────────
+for DOMAIN_NAME in $DOMAINS; do
+    echo
+    echo "──────────────────────────────────────────────"
+    echo -e "${YELLOW}Setting up ${DOMAIN_NAME}${RESET}"
+    echo "──────────────────────────────────────────────"
+
+    DOCUMENT_ROOT="$DOCUMENT_ROOT_BASE/$DOMAIN_NAME"
+    CONFIG_FILE="/etc/nginx/sites-available/$DOMAIN_NAME"
+
+    if ! dir_exists "$DOCUMENT_ROOT"; then
+        info "Creating document root at $DOCUMENT_ROOT"
+        sudo mkdir -p "$DOCUMENT_ROOT"
+    fi
+
+    if ! file_exists "$DOCUMENT_ROOT/index.html"; then
+        info "Creating sample index.html for $DOMAIN_NAME"
+        echo "<!DOCTYPE html><html><body><h1>Welcome to $DOMAIN_NAME!</h1></body></html>" | sudo tee "$DOCUMENT_ROOT/index.html" > /dev/null
+    fi
+
+    info "Generating Nginx config..."
+    sudo tee "$CONFIG_FILE" > /dev/null <<EOL
 server {
     listen 80;
     server_name $DOMAIN_NAME www.$DOMAIN_NAME;
@@ -62,79 +102,65 @@ server {
 }
 EOL
 
-# Test Nginx configuration
-echo "Testing Nginx configuration..."
-sudo nginx -t
+    sudo ln -sf "$CONFIG_FILE" /etc/nginx/sites-enabled/
+done
 
-# Reload Nginx to apply changes
-echo "Reloading Nginx..."
+#─────────────────────────────────────────────
+# Nginx Verification
+#─────────────────────────────────────────────
+info "Testing Nginx configuration..."
+sudo nginx -t && success "Nginx config OK."
+
+info "Reloading Nginx..."
 sudo systemctl reload nginx
 
-# Obtain SSL certificate
-echo "Obtaining SSL certificate with Certbot for $DOMAIN_NAME..."
-sudo certbot --nginx -d $DOMAIN_NAME -d www.$DOMAIN_NAME
+#─────────────────────────────────────────────
+# SSL Certificates
+#─────────────────────────────────────────────
+for DOMAIN_NAME in $DOMAINS; do
+    info "Obtaining SSL certificate for $DOMAIN_NAME..."
+    if sudo certbot --nginx -d "$DOMAIN_NAME" -d "www.$DOMAIN_NAME" --non-interactive --agree-tos -m admin@$DOMAIN_NAME; then
+        success "SSL issued for $DOMAIN_NAME"
+    else
+        warn "Failed to obtain certificate for $DOMAIN_NAME"
+    fi
+done
 
-# Set up automatic renewal
-echo "Setting up automatic SSL certificate renewal..."
+#─────────────────────────────────────────────
+# Certbot Renewal
+#─────────────────────────────────────────────
+info "Enabling automatic certificate renewal..."
 sudo systemctl enable certbot.timer
+sudo certbot renew --dry-run && success "Renewal dry run successful."
 
-# Verify Certbot renewal
-echo "Verifying Certbot renewal..."
-sudo certbot renew --dry-run
-
-# Set up Nginx directory and file permissions
-echo "Setting correct file permissions..."
-if dir_exists "$DOCUMENT_ROOT"; then
-    echo "Setting ownership and permissions for $DOCUMENT_ROOT"
+#─────────────────────────────────────────────
+# Permissions
+#─────────────────────────────────────────────
+for DOMAIN_NAME in $DOMAINS; do
+    DOCUMENT_ROOT="$DOCUMENT_ROOT_BASE/$DOMAIN_NAME"
+    info "Setting permissions for $DOCUMENT_ROOT..."
     sudo chown -R www-data:www-data "$DOCUMENT_ROOT"
     sudo find "$DOCUMENT_ROOT" -type d -exec chmod 755 {} \;
     sudo find "$DOCUMENT_ROOT" -type f -exec chmod 644 {} \;
-else
-    echo "Directory $DOCUMENT_ROOT does not exist. Please check the document root."
-    exit 1
-fi
+done
 
-# Verify Nginx configuration
-echo "Testing Nginx configuration again..."
-if command_exists nginx; then
-    sudo nginx -t
-else
-    echo "Nginx is not installed. Please install Nginx first."
-    exit 1
-fi
+#─────────────────────────────────────────────
+# Final Verification
+#─────────────────────────────────────────────
+info "Final Nginx test..."
+sudo nginx -t && success "Configuration verified."
 
-# Reload Nginx to apply changes
-echo "Reloading Nginx..."
+info "Reloading Nginx..."
 sudo systemctl reload nginx
+success "Nginx reloaded successfully."
 
-# Check Nginx error log
-echo "Checking Nginx error log for issues..."
-sudo tail -n 50 /var/log/nginx/error.log
-
-# Verify content presence
-echo "Verifying content in $DOCUMENT_ROOT..."
-if file_exists "$DOCUMENT_ROOT/index.html"; then
-    echo "Index file found."
-else
-    echo "Index file not found. Ensure an index.html file is present in $DOCUMENT_ROOT."
-    echo "Creating a sample index.html file..."
-    echo "<!DOCTYPE html><html><body><h1>It works!</h1></body></html>" | sudo tee "$DOCUMENT_ROOT/index.html"
-fi
-
-# Optional: Handle SELinux if installed
-if command_exists setenforce; then
-    echo "SELinux is installed. Temporarily disabling SELinux..."
-    sudo setenforce 0
-    echo "If this resolves the issue, consider adjusting SELinux policies instead of keeping it disabled."
-fi
-
-# Optional: Handle AppArmor if installed
-if [ -d "/etc/apparmor.d/" ]; then
-    echo "AppArmor is installed. Ensure Nginx profile allows access to $DOCUMENT_ROOT."
-    # Example command to disable AppArmor profile for Nginx (be cautious with this)
-    # sudo aa-complain /etc/apparmor.d/usr.sbin.nginx
-fi
-
-# Final message
-echo "Script execution complete. Review the outputs above to troubleshoot any issues."
-echo "Your site should now be accessible via HTTPS at https://$DOMAIN_NAME and https://www.$DOMAIN_NAME."
+#─────────────────────────────────────────────
+# Summary
+#─────────────────────────────────────────────
+echo
+echo "🎉 ${GREEN}Setup complete! Your domains are live:${RESET}"
+for DOMAIN_NAME in $DOMAINS; do
+    echo -e " - ${CYAN}https://$DOMAIN_NAME${RESET}"
+    echo -e " - ${CYAN}https://www.$DOMAIN_NAME${RESET}"
+done
+echo
